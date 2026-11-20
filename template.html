@@ -157,6 +157,11 @@ td.dim { color: var(--muted); font-size: 13px; }
 .facts .row dt { color: var(--muted); font-size: 14px; }
 .facts a { color: var(--main); }
 @media (max-width: 520px) { .facts .row { grid-template-columns: minmax(0, 1fr); } }
+.mins { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; }
+.mins .field { flex: 0 1 220px; }
+.mins select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.mins select:focus-visible { outline: 2px solid var(--main); outline-offset: 2px; }
+.mins .linkbtn { padding-bottom: 9px; }
 .sortbtn { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
 .sortbtn:hover { color: var(--ink); }
 th[aria-sort] .sortbtn { color: var(--ink); }
@@ -212,6 +217,15 @@ td a { color: var(--main); font-weight: 600; }
         <span>Number = GreatSchools rating</span>
       </div>
     </div>
+    <div class="mins">
+      <div class="field"><label class="label" for="m-min-gs">Minimum GreatSchools rating</label><select id="m-min-gs" data-min="gs"></select></div>
+      <div class="field"><label class="label" for="m-min-odds">Minimum odds, no tiebreakers</label><select id="m-min-odds" data-min="odds"></select></div>
+      <div class="field"><label class="label" for="m-min-hood">Minimum odds, neighborhood tiebreaker</label><select id="m-min-hood" data-min="hood"></select></div>
+      <div class="field"><label class="label" for="m-min-wl">Minimum odds off waitlist</label><select id="m-min-wl" data-min="wl"></select></div>
+      <div class="field"><label class="label" for="m-grade">Grade the odds are for</label><select id="m-grade"></select></div>
+      <button type="button" class="linkbtn min-clear" hidden>Clear filters</button>
+    </div>
+    <p class="fine" id="map-count"></p>
     <div class="mapbox">
       <svg id="map" role="group" aria-label="Map of San Francisco schools">
         <g id="hoods"></g><g id="names"></g><g id="dots"></g>
@@ -239,6 +253,13 @@ td a { color: var(--main); font-weight: 600; }
         <button type="button" data-scope="cw">City-wide programs only</button>
         <button type="button" data-scope="aa">Neighborhood programs only</button>
       </div>
+    </div>
+    <div class="mins">
+      <div class="field"><label class="label" for="min-gs">Minimum GreatSchools rating</label><select id="min-gs" data-min="gs"></select></div>
+      <div class="field"><label class="label" for="min-odds">Minimum odds, no tiebreakers</label><select id="min-odds" data-min="odds"></select></div>
+      <div class="field"><label class="label" for="min-hood">Minimum odds, neighborhood tiebreaker</label><select id="min-hood" data-min="hood"></select></div>
+      <div class="field"><label class="label" for="min-wl">Minimum odds off waitlist</label><select id="min-wl" data-min="wl"></select></div>
+      <button type="button" class="linkbtn min-clear" hidden>Clear filters</button>
     </div>
     <p class="fine" id="city-count"></p>
     <div class="tablebox"><table id="city-table"></table></div>
@@ -285,12 +306,13 @@ const PTS = {};
 for (const [n, s] of Object.entries(SCH)) PTS[n] = { x: s[0], y: s[1], r: s[2], cls: s[4] ? 'aa' : 'cw', lvl: s[5] };
 for (const [n, c] of Object.entries(CH)) PTS[n] = { x: c.x, y: c.y, r: c.r, cls: 'ch', lvl: c.lvl };
 
-const state = { key: 'Alvarado ES|GE', grade: 'K', level: 'all', charter: null, cgrade: 'K', cscope: 'all', csort: { col: 'gs', dir: -1 } };
+const state = { key: 'Alvarado ES|GE', grade: 'K', level: 'all', charter: null, cgrade: 'K', cscope: 'all', cmin: { gs: 0, odds: 0, hood: 0, wl: 0 }, csort: { col: 'gs', dir: -1 } };
 try {
   const s = JSON.parse(localStorage.getItem('sfusd-odds') || 'null');
   if (s && combos.has(s.key)) Object.assign(state, s);
   if (!CH[state.charter]) state.charter = null;
   if (!['all', 'cw', 'aa'].includes(state.cscope)) state.cscope = 'all';
+  state.cmin = Object.assign({ gs: 0, odds: 0, hood: 0, wl: 0 }, state.cmin);
 } catch (e) { /* storage unavailable: start from the default pick */ }
 function remember() {
   try { localStorage.setItem('sfusd-odds', JSON.stringify(state)); } catch (e) { /* remembering the pick is optional */ }
@@ -534,9 +556,11 @@ function zoomAt(factor, cx, cy) {
 }
 function renderMapState() {
   const sel = selectedSchool();
+  let visible = 0;
   for (const g of $('dots').children) {
     const n = schoolNames[+g.dataset.i];
-    const show = state.level === 'all' || PTS[n].lvl === state.level || n === sel;
+    const show = ((state.level === 'all' || PTS[n].lvl === state.level) && schoolMeetsMins(n)) || n === sel;
+    if (show) visible++;
     if (show) g.removeAttribute('hidden'); else g.setAttribute('hidden', '');
     g.classList.toggle('sel', n === sel);
     g.setAttribute('aria-pressed', n === sel);
@@ -544,6 +568,10 @@ function renderMapState() {
   const selEl = $('dots').querySelector('.sel');
   if (selEl) $('dots').appendChild(selEl);
   for (const b of $('levels').children) b.setAttribute('aria-pressed', b.dataset.level === state.level);
+  syncMins();
+  const oddsOn = activeMins().some((k) => k !== 'gs');
+  $('map-count').textContent = `${visible} of ${schoolNames.length} schools shown`
+    + (oddsOn ? `, using ${gradeName(state.cgrade)} odds. A school shows if any of its programs in that grade meets the minimums; charters publish no odds, so they are hidden.` : '.');
 }
 
 function charterPanel(name) {
@@ -727,6 +755,38 @@ function charterHasGrade(c, g) {
   const i = GRADE_ORDER.indexOf(g);
   return i >= GRADE_ORDER.indexOf(lo) && i <= GRADE_ORDER.indexOf(hi || lo);
 }
+const PCT_STEPS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95];
+function fillMins() {
+  const pctOpts = '<option value="0">Any</option>' + PCT_STEPS.map((v) => `<option value="${v}">${Math.round(v * 100)}% or higher</option>`).join('');
+  const gsOpts = '<option value="0">Any</option>' + [2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => `<option value="${v}">${v}${v < 10 ? ' or higher' : ''}</option>`).join('');
+  for (const sel of document.querySelectorAll('select[data-min]')) sel.innerHTML = sel.dataset.min === 'gs' ? gsOpts : pctOpts;
+  $('m-grade').innerHTML = GRADE_ORDER.map((g) => `<option value="${g}">${gradeName(g)}</option>`).join('');
+}
+const activeMins = () => Object.keys(state.cmin).filter((k) => state.cmin[k] > 0);
+// A row with no value for a filtered column (unrated, city-wide, charter) cannot meet a minimum, so it drops out.
+const meetsMins = (it, keys) => keys.every((k) => it[k] != null && it[k] + 1e-9 >= state.cmin[k]);
+function syncMins() {
+  for (const sel of document.querySelectorAll('select[data-min]')) sel.value = String(state.cmin[sel.dataset.min]);
+  for (const b of document.querySelectorAll('.min-clear')) b.hidden = activeMins().length === 0;
+  $('m-grade').value = state.cgrade;
+}
+// On the map a school passes when its rating does and, for the odds filters, any of its programs in the chosen grade does.
+function schoolMeetsMins(name) {
+  const active = activeMins();
+  if (!meetsMins({ gs: PTS[name].r }, active.filter((k) => k === 'gs'))) return false;
+  const rest = active.filter((k) => k !== 'gs');
+  if (!rest.length) return true;
+  if (CH[name]) return false;
+  return bySchool.get(name).some((c) => {
+    const r = c.grades.get(state.cgrade);
+    if (!r) return false;
+    const wl = waitlist(r), cw = cityWide(r);
+    return meetsMins({ odds: combine(noTie(r).pSuc, wl.odds), hood: cw ? null : combine(hoodTie(r).pSuc, wl.odds),
+      wl: wl.has || wl.odds === 1 ? wl.odds : null }, rest);
+  });
+}
+function rerenderFiltered() { if (!$('view-map').hidden) { renderMapState(); remember(); } else renderCity(); }
+fillMins();
 function renderCity() {
   const g = state.cgrade, items = [];
   for (const c of combos.values()) {
@@ -742,6 +802,10 @@ function renderCity() {
   for (const [n, c] of Object.entries(CH)) {
     if (state.cscope !== 'aa' && charterHasGrade(c, g)) items.push({ name: n, program: 'Charter school, own lottery', charter: true, gs: c.r, gsPath: c.path });
   }
+  const total = items.length, active = activeMins();
+  const shown = items.filter((it) => meetsMins(it, active));
+  items.length = 0; items.push(...shown);
+  syncMins();
   const { col, dir } = state.csort;
   items.sort((a, b) => {
     const x = a[col], y = b[col];
@@ -770,8 +834,9 @@ function renderCity() {
       <td>${wlValue}${!it.wlInfo.has ? '<span class="sub">' + (it.wlInfo.odds === 1 ? 'inferred: not in waitlist sheet' : 'no waitlist') + '</span>' : ''}</td>
       <td>${num(it.init)}</td><td>${num(it.cur)}</td><td>${num(it.off)}</td></tr>`;
   }).join('');
-  $('city-table').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body || '<tr><td colspan="10">No programs match for this grade.</td></tr>'}</tbody>`;
-  $('city-count').textContent = `${items.length} ${{ all: '', cw: 'city-wide ', aa: 'neighborhood ' }[state.cscope]}program${items.length === 1 ? '' : 's'} for ${gradeName(g)}.`;
+  $('city-table').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body || '<tr><td colspan="10">No programs meet these filters for this grade.</td></tr>'}</tbody>`;
+  $('city-count').textContent = `${active.length ? items.length + ' of ' + total : total} ${{ all: '', cw: 'city-wide ', aa: 'neighborhood ' }[state.cscope]}program${total === 1 ? '' : 's'} for ${gradeName(g)}`
+    + (active.length ? '. Programs with no value for a filtered column are hidden.' : '.');
   $('cgrades').innerHTML = GRADE_ORDER.map((x) => `<button type="button" data-grade="${x}" aria-pressed="${x === g}">${x}</button>`).join('');
   for (const b of $('cscope').children) b.setAttribute('aria-pressed', b.dataset.scope === state.cscope);
   remember();
@@ -780,6 +845,15 @@ $('cgrades').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   state.cgrade = b.dataset.grade; renderCity();
 });
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'm-grade') state.cgrade = e.target.value;
+  else if (e.target.dataset && e.target.dataset.min) state.cmin[e.target.dataset.min] = +e.target.value;
+  else return;
+  rerenderFiltered();
+});
+for (const b of document.querySelectorAll('.min-clear')) {
+  b.addEventListener('click', () => { state.cmin = { gs: 0, odds: 0, hood: 0, wl: 0 }; rerenderFiltered(); });
+}
 $('cscope').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   state.cscope = b.dataset.scope; renderCity();
