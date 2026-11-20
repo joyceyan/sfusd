@@ -241,11 +241,11 @@ td a { color: var(--main); font-weight: 600; }
     </div>
     <p class="fine" id="city-count"></p>
     <div class="tablebox"><table id="city-table"></table></div>
-    <p class="fine">Main-round figures exclude sibling applicants. Charter schools run their own lotteries and publish no counts, so they show a rating only.</p>
+    <p class="fine">Main-round figures are for applicants with no tiebreaker. Charter schools run their own lotteries and publish no counts, so they show a rating only.</p>
   </div>
 
   <footer class="notes">
-    <p><strong>How the odds are built.</strong> Combined odds = main-round success + (1 − main-round success) × waitlist odds. Main-round success means being assigned this program or one the family ranked higher. Sibling applicants are taken out of every main-round figure, because they are placed almost every time: each rate is (all applicants − sibling applicants) on both the top and the bottom. The neighborhood figure is the sheet's attendance-area rate as published, which cannot be split by sibling status. Waitlist odds are offers made so far divided by (offers made so far + current waitlist length), and the same waitlist odds are applied to every applicant whatever their tiebreakers.</p>
+    <p><strong>How the odds are built.</strong> Combined odds = main-round success + (1 − main-round success) × waitlist odds. Main-round success means being assigned this program or one the family ranked higher. The no-tiebreaker figures come straight from the sheet's "applicants with no tiebreakers" columns, and the neighborhood figures from its attendance-area applicant columns. Percentages are the sheet's own, so they can differ by a point from the rounded counts beside them. Waitlist odds are offers made so far divided by (offers made so far + current waitlist length), and the same waitlist odds are applied to every applicant whatever their tiebreakers. When a school, program and grade has no row in the waitlist sheet, the page uses 100%. That is an inference: the sheet only lists waitlists that still have people on them, so a missing row means nobody is waiting now, and the page assumes everyone who wanted a seat got one.</p>
     <p><strong>City-wide or assigned neighborhood.</strong> SFUSD treats K-8 schools, SF Public Montessori, schools where every student is in a language or newcomer program, early education schools, middle schools and high schools as city-wide: they have no attendance area, so living nearby gives no tiebreaker. Language programs inside a neighborhood school are city-wide programs too. General education TK feeder programs at early education schools are the exception: they give a tiebreaker to families in the feeder elementary school's attendance area. The split here follows the sheet, marking a program as neighborhood-based when it has attendance-area applicants.</p>
     <p>Special education (SDC) programs and Access SFUSD sites are left out. Counts in the district sheet are rounded, so its percentages can differ slightly from the counts shown.</p>
     <p>Sources: SFUSD <a href="https://docs.google.com/spreadsheets/d/16mtV4GchcWsl6xs6oUrVy6edmNRXzBU6lgbkLlwxiHI/edit?gid=0#gid=0">main round results</a>, <a href="https://docs.google.com/spreadsheets/d/1hatg8laSrgwwH8Zf1z4RPCNF0ICIX7rEXv3aq5f3FDo/edit?gid=1104076014#gid=1104076014">waitlist lengths</a> (updated __UPDATED__) and <a href="https://www.sfusd.edu/node/6542">city-wide schools</a>. Ratings and school locations from <a href="https://www.greatschools.org/california/san-francisco/schools/">GreatSchools</a>, read November 19, 2026. Neighborhood outlines from DataSF.</p>
@@ -255,7 +255,7 @@ td a { color: var(--main); font-weight: 600; }
 
 <script>
 const ROWS = __DATA__;
-// [school, grade, code, program, tag, req, asg, pAsg, sucN, pSuc, sibReq, sibSucN, esaaReq, pEsaa, ntReq, pNt, wInit, wCur, wOff, wLast, sibAsg]
+// [school, grade, code, program, tag, req, asg, pAsg, sucN, pSuc, sibReq, sibSucN, esaaReq, pEsaa, ntReq, pNt, wInit, wCur, wOff, wLast, sibAsg, esaaAsg, esaaSucN, ntAsg, ntSucN, pEsaaAsg, pNtAsg]
 const SCH = __SCH__;   // school -> [x, y, greatSchoolsRating, greatSchoolsPath, hasAttendanceArea, level]
 const GEO = __GEO__;   // [neighborhood, path, labelX, labelY]
 const CH = __CH__;     // charter school -> { x, y, r, path, grades, lvl, enroll, spt, low, parent, reviews, addr, sub, info }
@@ -306,12 +306,13 @@ function waitlist(r) {
   if (cur === 0) return { has: true, odds: 1, cleared: true };
   return { has: true, odds: off / (off + cur) };
 }
-// Main-round counts with sibling applicants taken out: siblings are placed almost every time, so they inflate the rates.
-function nonSibling(r) {
-  const req = r[5] - r[10], asg = Math.max(0, r[6] - r[20]), suc = Math.max(0, r[8] - r[11]);
-  if (req <= 0) return { req: 0, asg: 0, suc: 0, pAsg: null, pSuc: null };
-  return { req, asg, suc, pAsg: Math.min(1, asg / req), pSuc: Math.min(1, suc / req) };
+// One tiebreaker group's main-round numbers, read straight from the sheet's columns for that group.
+function tieGroup(r, reqI, asgI, sucI, pAsgI, pSucI) {
+  const pc = (i) => (r[i] == null ? null : r[i] / 100);
+  return { req: r[reqI], asg: r[asgI], suc: r[sucI], pAsg: pc(pAsgI), pSuc: pc(pSucI) };
 }
+const noTie = (r) => tieGroup(r, 14, 23, 24, 26, 15);        // "Applicants with no tiebreakers"
+const hoodTie = (r) => tieGroup(r, 12, 21, 22, 25, 13);      // "Elementary School Attendance Area applicants"
 function combine(p, wl) { return p == null ? null : p + (1 - p) * wl; }
 
 // 'school' = city-wide school, 'program' = city-wide program inside a neighborhood school, null = has an attendance area
@@ -349,20 +350,26 @@ function oddsCard(title, sub, p, wl, emptyHead, emptyMsg, extra) {
       <li><span class="dot m"></span><b>${pct(p)}</b> main-round success</li>
       <li><span class="dot w"></span><b>+${pct(add)}</b> from the waitlist (${pct(1 - p)} left × ${pct(wl.odds)})</li>
     </ul>
-    <p class="fine">${sub}</p>${extra || ''}
+    <p class="fine">${sub}</p>${!wl.has && wl.odds === 1 ? '<p class="fine"><strong>The 100% waitlist odds are inferred.</strong> There is no waitlist for this grade in the Google Sheet, which only lists waitlists that still have people on them.</p>' : ''}${extra || ''}
   </article>`;
 }
 
+const INFERRED = 'Inferred, not reported. This school, program and grade has no row in the waitlist sheet, and the sheet only lists waitlists that still have people on them, so nobody is waiting now. The page assumes anyone who wanted a seat got one.';
 function waitlistText(r, wl) {
   if (!wl.has) {
-    return ['—', SELECTIVE.includes(r[0])
-      ? 'No waitlist in the sheet. Admission here is by application, so the combined odds use the main round only.'
-      : 'No waitlist in the sheet, which the district says means nobody is waiting. Combined odds treat a seat as available.'];
+    return SELECTIVE.includes(r[0])
+      ? ['—', 'No waitlist in the sheet. Admission here is by application, so the combined odds use the main round only.']
+      : ['100%', INFERRED];
   }
   if (wl.cleared) return ['100%', 'Nobody is on the waitlist now, so it is treated as cleared.'];
   return [pct(wl.odds), `${num(r[18])} offers ÷ (${num(r[18])} offers + ${num(r[17])} still waiting)`];
 }
 
+function rawRow(label, g, countKey, pctKey, cityWideHere) {
+  if (cityWideHere) return `<div class="row"><dt>${label}<small>City-wide, so there is no attendance area tiebreaker</small></dt><dd>—</dd></div>`;
+  const what = countKey === 'suc' ? ' got this or a higher-ranked choice' : ' assigned here';
+  return `<div class="row"><dt>${label}<small>${num(g[countKey])} of ${num(g.req)} requests${what}</small></dt><dd>${pct(g[pctKey])}</dd></div>`;
+}
 function renderResult() {
   const c = combos.get(state.key);
   const r = c.grades.get(state.grade);
@@ -370,16 +377,14 @@ function renderResult() {
   const wl = waitlist(r);
   const cw = cityWide(r);
 
-  const ns = nonSibling(r);
-  const strictLine = d(15) == null ? '' :
-    `<p class="fine">The sheet's stricter group with no tiebreaker of any kind (${num(r[14])} requests): ${pct(d(15))} main round, ${pct(combine(d(15), wl.odds))} combined.</p>`;
+  const nt = noTie(r), aa = hoodTie(r);
   const [wlValue, wlNote] = waitlistText(r, wl);
 
   const hoodCard = cw
     ? oddsCard('Neighborhood tiebreaker only', '', null, wl, 'City-wide', cw === 'school'
         ? 'This is a city-wide school. It has no attendance area, so living nearby gives no tiebreaker.'
         : 'This is a city-wide program. The neighborhood tiebreaker at this school only counts for general education.')
-    : oddsCard('Neighborhood tiebreaker only', `${num(r[12])} requests came from the school's attendance area (ESAA).`, d(13), wl,
+    : oddsCard('Neighborhood tiebreaker only', `${num(aa.suc)} of ${num(aa.req)} attendance-area requests got this or a higher-ranked choice.`, aa.pSuc, wl,
         'No data', 'Nobody from the attendance area applied for this grade.');
 
   $('result').innerHTML = `
@@ -387,15 +392,17 @@ function renderResult() {
     <p class="picked">${schoolLabel(r[0])} <span>· ${esc(r[3])} · ${gradeName(r[1])}</span></p>
     ${badges(r[0], r[4])}
     <div class="odds">
-      ${oddsCard('No sibling tiebreaker', `${num(ns.suc)} of ${num(ns.req)} non-sibling requests got this or a higher-ranked choice.`, ns.pSuc, wl,
-        'No data', 'Every request here came with a sibling tiebreaker.', strictLine)}
+      ${oddsCard('No tiebreakers', `${num(nt.suc)} of ${num(nt.req)} requests with no tiebreaker got this or a higher-ranked choice.`, nt.pSuc, wl,
+        'No data', 'Nobody applied here without a tiebreaker.')}
       ${hoodCard}
     </div>
     <section class="ledger">
       <h2>Raw numbers</h2>
       <dl>
-        <div class="row"><dt>Assigned in the main round<small>${num(ns.asg)} of ${num(ns.req)} non-sibling requests</small></dt><dd>${pct(ns.pAsg)}</dd></div>
-        <div class="row"><dt>Success in the main round<small>${num(ns.suc)} of ${num(ns.req)} non-sibling requests got this or a higher-ranked choice</small></dt><dd>${pct(ns.pSuc)}</dd></div>
+        ${rawRow('Assigned in the main round, attendance area tiebreaker', aa, 'asg', 'pAsg', cw)}
+        ${rawRow('Assigned in the main round, no tiebreakers', nt, 'asg', 'pAsg')}
+        ${rawRow('Success in the main round, attendance area tiebreaker', aa, 'suc', 'pSuc', cw)}
+        ${rawRow('Success in the main round, no tiebreakers', nt, 'suc', 'pSuc')}
         <div class="row"><dt>Odds of getting off the waitlist<small>${wlNote}</small></dt><dd>${wlValue}</dd></div>
       </dl>
       <div class="trio">
@@ -576,17 +583,20 @@ function renderPanel() {
   const rows = progs.filter((p) => p.grades.has(state.grade)).map((p) => {
     const r = p.grades.get(state.grade);
     const d = (i) => (r[i] == null ? null : r[i] / 100);
-    const wl = waitlist(r), cw = cityWide(r), ns = nonSibling(r);
+    const wl = waitlist(r), cw = cityWide(r), ns = noTie(r), aa = hoodTie(r);
     const [wlValue] = waitlistText(r, wl);
     const hood = cw ? '<td class="dim">City-wide</td>'
-      : `<td class="key">${pct(combine(d(13), wl.odds))}<span class="sub">${d(13) == null ? 'no applicants' : pct(d(13)) + ' main round'}</span></td>`;
+      : `<td class="key">${pct(combine(aa.pSuc, wl.odds))}<span class="sub">${aa.pSuc == null ? 'no applicants' : pct(aa.pSuc) + ' main round'}</span></td>`;
+    const hoodRaw = cw ? '<td class="dim">City-wide</td><td class="dim">City-wide</td>'
+      : `<td>${pct(aa.pAsg)}<span class="sub">${num(aa.asg)} of ${num(aa.req)}</span></td><td>${pct(aa.pSuc)}<span class="sub">${num(aa.suc)} of ${num(aa.req)}</span></td>`;
     return `<tr>
       <td><button type="button" class="linkbtn" data-key="${esc(p.key)}">${esc(p.program)}</button>${r[4] ? `<span class="sub">${esc(r[4])}</span>` : ''}</td>
       <td class="key">${pct(combine(ns.pSuc, wl.odds))}<span class="sub">${ns.pSuc == null ? 'no applicants' : pct(ns.pSuc) + ' main round'}</span></td>
       ${hood}
       <td>${pct(ns.pAsg)}<span class="sub">${num(ns.asg)} of ${num(ns.req)}</span></td>
       <td>${pct(ns.pSuc)}<span class="sub">${num(ns.suc)} of ${num(ns.req)}</span></td>
-      <td>${wlValue}${!wl.has ? '<span class="sub">no waitlist</span>' : ''}</td>
+      ${hoodRaw}
+      <td>${wlValue}${!wl.has ? '<span class="sub">' + (wl.odds === 1 ? 'inferred: not in waitlist sheet' : 'no waitlist') + '</span>' : ''}</td>
       <td>${num(r[16])}</td><td>${num(r[17])}</td><td>${num(r[18])}</td>
     </tr>`;
   }).join('');
@@ -603,10 +613,12 @@ function renderPanel() {
       <div class="tablebox"><table>
         <thead><tr>
           <th scope="col">Program, ${gradeName(state.grade)}</th>
-          <th scope="col">Odds, no sibling tiebreaker</th>
+          <th scope="col">Odds, no tiebreakers</th>
           <th scope="col">Odds, neighborhood tiebreaker</th>
-          <th scope="col">Assigned in main round</th>
-          <th scope="col">Success in main round</th>
+          <th scope="col">Assigned, no tiebreakers</th>
+          <th scope="col">Success, no tiebreakers</th>
+          <th scope="col">Assigned, neighborhood tiebreaker</th>
+          <th scope="col">Success, neighborhood tiebreaker</th>
           <th scope="col">Odds off waitlist</th>
           <th scope="col">Initial waitlist</th>
           <th scope="col">Current waitlist</th>
@@ -705,8 +717,8 @@ window.addEventListener('resize', () => { if (!$('view-map').hidden) applyView()
 
 // ---------- Views ----------
 // ---------- City-wide table ----------
-const CITY_COLS = [['name', 'School and program'], ['gs', 'GreatSchools rating'], ['odds', 'Odds, no sibling tiebreaker'], ['asg', 'Assigned in main round'],
-  ['suc', 'Success in main round'], ['wl', 'Odds off waitlist'], ['init', 'Initial waitlist'], ['cur', 'Current waitlist'], ['off', 'Offers so far']];
+const CITY_COLS = [['name', 'School and program'], ['gs', 'GreatSchools rating'], ['odds', 'Odds, no tiebreakers'], ['asg', 'Assigned, no tiebreakers'],
+  ['suc', 'Success, no tiebreakers'], ['wl', 'Odds off waitlist'], ['init', 'Initial waitlist'], ['cur', 'Current waitlist'], ['off', 'Offers so far']];
 function charterHasGrade(c, g) {
   const [lo, hi] = c.grades.split('-');
   const i = GRADE_ORDER.indexOf(g);
@@ -719,9 +731,9 @@ function renderCity() {
     if (!r) continue;
     const cw = cityWide(r);
     if (!cw || (state.cscope === 'school' && cw !== 'school')) continue;
-    const wl = waitlist(r), ns = nonSibling(r);
+    const wl = waitlist(r), ns = noTie(r);
     items.push({ name: c.school, program: c.program, key: c.key, gs: SCH[c.school][2], gsPath: SCH[c.school][3], r, wlInfo: wl, ns,
-      odds: combine(ns.pSuc, wl.odds), asg: ns.pAsg, suc: ns.pSuc, wl: wl.has ? wl.odds : null, init: r[16], cur: r[17], off: r[18] });
+      odds: combine(ns.pSuc, wl.odds), asg: ns.pAsg, suc: ns.pSuc, wl: wl.has || wl.odds === 1 ? wl.odds : null, init: r[16], cur: r[17], off: r[18] });
   }
   for (const [n, c] of Object.entries(CH)) {
     if (charterHasGrade(c, g)) items.push({ name: n, program: 'Charter school, own lottery', charter: true, gs: c.r, gsPath: c.path });
@@ -750,7 +762,7 @@ function renderCity() {
       <td class="key">${pct(it.odds)}</td>
       <td>${pct(it.asg)}<span class="sub">${num(it.ns.asg)} of ${num(it.ns.req)}</span></td>
       <td>${pct(it.suc)}<span class="sub">${num(it.ns.suc)} of ${num(it.ns.req)}</span></td>
-      <td>${wlValue}${!it.wlInfo.has ? '<span class="sub">no waitlist</span>' : ''}</td>
+      <td>${wlValue}${!it.wlInfo.has ? '<span class="sub">' + (it.wlInfo.odds === 1 ? 'inferred: not in waitlist sheet' : 'no waitlist') + '</span>' : ''}</td>
       <td>${num(it.init)}</td><td>${num(it.cur)}</td><td>${num(it.off)}</td></tr>`;
   }).join('');
   $('city-table').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body || '<tr><td colspan="9">Nothing city-wide takes new students in this grade.</td></tr>'}</tbody>`;
