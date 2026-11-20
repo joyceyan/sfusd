@@ -1,0 +1,695 @@
+<title>SFUSD Admission Odds</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one working column with two views. Lookup: picker, two headline odds, raw ledger. Map: city map on top, selected school's program table below. */
+:root {
+  --bg: #F3F6F7;
+  --surface: #FFFFFF;
+  --ink: #14232D;
+  --muted: #586973;
+  --line: #D5DEE2;
+  --main: #0B6E8F;      /* main-round share, attendance-area schools */
+  --wait: #C9820A;      /* waitlist share */
+  --cw: #6A4DB5;        /* city-wide schools */
+  --ch: #C0396B;        /* charter schools */
+  --track: #E4EAED;
+  --chip: #E8EEF1;
+  --on-main: #FFFFFF;
+  --water: #DCE8EE;
+  --land: #FBFCFC;
+  --display: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F171C; --surface: #172229; --ink: #E7EEF2; --muted: #94A5AF; --line: #2A3942;
+    --main: #56BEDD; --wait: #F0B441; --cw: #B29CF0; --ch: #F28DB2; --track: #24323A; --chip: #223038; --on-main: #08222C;
+    --water: #0B1216; --land: #1B272E;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F171C; --surface: #172229; --ink: #E7EEF2; --muted: #94A5AF; --line: #2A3942;
+  --main: #56BEDD; --wait: #F0B441; --cw: #B29CF0; --ch: #F28DB2; --track: #24323A; --chip: #223038; --on-main: #08222C;
+  --water: #0B1216; --land: #1B272E;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--body); font-size: 15px; line-height: 1.5;
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.wrap.wide { max-width: 1000px; }
+.stack { display: flex; flex-direction: column; gap: 18px; }
+h1 { font-family: var(--display); font-size: 28px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.lede { color: var(--muted); margin: 6px 0 0; max-width: 62ch; }
+.label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button {
+  font: inherit; font-weight: 600; color: var(--muted); background: none; border: 0; cursor: pointer;
+  padding: 8px 14px; border-bottom: 3px solid transparent; margin-bottom: -1px;
+}
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--main); }
+
+.picker { display: flex; flex-direction: column; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.combo { position: relative; }
+#school-q {
+  width: 100%; font: inherit; font-size: 16px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 11px 13px;
+}
+#school-q:focus-visible, button:focus-visible, a:focus-visible, .dot-g:focus-visible { outline: 2px solid var(--main); outline-offset: 2px; }
+#school-list {
+  position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  max-height: 300px; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+}
+#school-list li { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; flex-wrap: wrap; gap: 2px 8px; justify-content: space-between; }
+#school-list li small { color: var(--muted); font-size: 13px; }
+#school-list li[aria-selected="true"] { background: var(--chip); }
+#school-list .none { color: var(--muted); cursor: default; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--chip);
+  border: 1px solid transparent; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  text-align: left;
+}
+.chips button:hover { border-color: var(--main); }
+.chips button[aria-pressed="true"] { background: var(--main); color: var(--on-main); font-weight: 600; }
+.chips.grades button { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.picked { font-family: var(--display); font-size: 19px; font-weight: 600; margin: 0; text-wrap: balance; }
+.picked span { color: var(--muted); font-weight: 500; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; border-radius: 6px; padding: 2px 9px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; background: var(--surface); }
+.badge i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.badge.aa i { background: var(--main); } .badge.cw i { background: var(--cw); } .badge.ch i { background: var(--ch); }
+.badge.tag { color: var(--wait); border-color: var(--wait); }
+a.badge:hover { border-color: var(--main); }
+.badge b { font-family: var(--display); font-size: 15px; font-variant-numeric: tabular-nums; }
+
+.odds { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.big { font-family: var(--display); font-weight: 700; font-size: 56px; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.big.na { font-size: 30px; color: var(--muted); padding-block: 13px; }
+.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--track); }
+.bar i { display: block; height: 100%; }
+.bar .m { background: var(--main); }
+.bar .w { background: var(--wait); }
+.split { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); }
+.split li { display: flex; gap: 8px; align-items: baseline; }
+.split b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.dot { width: 9px; height: 9px; border-radius: 2px; flex: none; align-self: center; }
+.dot.m { background: var(--main); } .dot.w { background: var(--wait); }
+.fine { font-size: 13px; color: var(--muted); margin: 0; }
+
+.ledger { display: flex; flex-direction: column; }
+h2 { font-family: var(--display); font-size: 17px; margin: 0 0 6px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 11px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.row dt { margin: 0; }
+.row dt small { display: block; color: var(--muted); font-size: 13px; }
+.row dd { margin: 0; font-family: var(--display); font-weight: 600; font-size: 20px; font-variant-numeric: tabular-nums; text-align: right; }
+dl { margin: 0; }
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 14px 0 4px; border-top: 1px solid var(--line); }
+.trio div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.trio strong { font-family: var(--display); font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.trio span { font-size: 13px; color: var(--muted); }
+
+/* Map */
+.maptools { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: space-between; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); align-items: center; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 50%; }
+.legend .aa { background: var(--main); } .legend .cw { background: var(--cw); } .legend .ch { background: var(--ch); }
+.mapbox { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--water); }
+#map { display: block; width: 100%; height: min(560px, 82vw); touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+#map.dragging { cursor: grabbing; }
+#map .hood { fill: var(--land); stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+#map .hood-name { fill: var(--muted); font: 500 10px var(--body); text-anchor: middle; pointer-events: none; opacity: 0.8; }
+.dot-g { cursor: pointer; }
+.dot-g circle { stroke: var(--surface); stroke-width: 1.5; }
+.dot-g.aa circle { fill: var(--main); } .dot-g.cw circle { fill: var(--cw); } .dot-g.ch circle { fill: var(--ch); }
+.dot-g text { fill: var(--on-main); font: 700 10px var(--display); text-anchor: middle; pointer-events: none; }
+.dot-g.sel circle { stroke: var(--ink); stroke-width: 3; }
+.zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.zoom button { font: 600 18px/1 var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; cursor: pointer; }
+.zoom button.txt { font-size: 12px; padding: 7px 6px; }
+#tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 13px; font-weight: 500; padding: 4px 8px; border-radius: 6px; transform: translate(-50%, -140%); white-space: nowrap; z-index: 2; }
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); vertical-align: bottom; white-space: normal; min-width: 76px; }
+th:first-child, td:first-child { text-align: left; white-space: normal; min-width: 170px; }
+tbody tr:last-child td { border-bottom: 0; }
+td.key { font-family: var(--display); font-weight: 700; font-size: 17px; }
+td .sub { display: block; font-size: 12px; color: var(--muted); font-weight: 400; font-family: var(--body); }
+td.dim { color: var(--muted); font-size: 13px; }
+.facts .row { grid-template-columns: 180px minmax(0, 1fr); }
+.facts .row dd { font: 400 15px/1.5 var(--body); text-align: left; overflow-wrap: anywhere; }
+.facts .row dt { color: var(--muted); font-size: 14px; }
+.facts a { color: var(--main); }
+@media (max-width: 520px) { .facts .row { grid-template-columns: minmax(0, 1fr); } }
+.linkbtn { font: inherit; font-weight: 600; color: var(--main); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+
+.notes { border-top: 1px solid var(--line); padding-top: 16px; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.notes p { margin: 0; max-width: 78ch; }
+.notes a { color: var(--main); }
+</style>
+
+<div class="wrap" id="page">
+  <header class="stack" style="gap:14px">
+    <div>
+      <h1>SFUSD admission odds</h1>
+      <p class="lede">How applicants fared in the 2026–27 main round at each school, program and grade, and how far the waitlist has moved since.</p>
+    </div>
+    <div class="tabs" role="tablist" aria-label="View">
+      <button type="button" role="tab" id="tab-lookup" aria-controls="view-lookup" aria-selected="true">Lookup</button>
+      <button type="button" role="tab" id="tab-map" aria-controls="view-map" aria-selected="false">Map</button>
+    </div>
+  </header>
+
+  <div id="view-lookup" role="tabpanel" aria-labelledby="tab-lookup" class="stack" style="gap:22px">
+    <section class="picker" aria-label="Choose a school, program and grade">
+      <div class="field">
+        <label class="label" for="school-q">School or program</label>
+        <div class="combo">
+          <input id="school-q" type="text" role="combobox" aria-expanded="false" aria-controls="school-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Try “Alvarado” or “Mandarin immersion”">
+          <ul id="school-list" role="listbox" hidden></ul>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label" id="prog-label">Program at this school</span>
+        <div class="chips" id="programs" role="group" aria-labelledby="prog-label"></div>
+      </div>
+      <div class="field">
+        <span class="label" id="grade-label">Grade</span>
+        <div class="chips grades" id="grades" role="group" aria-labelledby="grade-label"></div>
+      </div>
+    </section>
+    <main id="result" aria-live="polite"></main>
+  </div>
+
+  <div id="view-map" role="tabpanel" aria-labelledby="tab-map" class="stack" hidden>
+    <div class="maptools">
+      <div class="chips" id="levels" role="group" aria-label="School level"></div>
+      <div class="legend">
+        <span><i class="aa"></i>Has an assigned neighborhood</span>
+        <span><i class="cw"></i>City-wide</span>
+        <span><i class="ch"></i>Charter, not run by SFUSD</span>
+        <span>Number = GreatSchools rating</span>
+      </div>
+    </div>
+    <div class="mapbox">
+      <svg id="map" role="group" aria-label="Map of San Francisco schools">
+        <g id="hoods"></g><g id="names"></g><g id="dots"></g>
+      </svg>
+      <div class="zoom">
+        <button type="button" id="zin" aria-label="Zoom in">+</button>
+        <button type="button" id="zout" aria-label="Zoom out">−</button>
+        <button type="button" id="zfit" class="txt">Reset</button>
+      </div>
+      <div id="tip" hidden></div>
+    </div>
+    <section id="map-panel" aria-live="polite"></section>
+  </div>
+
+  <footer class="notes">
+    <p><strong>How the odds are built.</strong> Combined odds = main-round success + (1 − main-round success) × waitlist odds. Main-round success means being assigned this program or one the family ranked higher. Waitlist odds are offers made so far divided by the current waitlist length, capped at 100%, and the same waitlist odds are applied to every applicant whatever their tiebreakers.</p>
+    <p><strong>City-wide or assigned neighborhood.</strong> SFUSD treats K-8 schools, SF Public Montessori, schools where every student is in a language or newcomer program, early education schools, middle schools and high schools as city-wide: they have no attendance area, so living nearby gives no tiebreaker. Language programs inside a neighborhood school are city-wide programs too. General education TK feeder programs at early education schools are the exception: they give a tiebreaker to families in the feeder elementary school's attendance area. The split here follows the sheet, marking a program as neighborhood-based when it has attendance-area applicants.</p>
+    <p>Special education (SDC) programs and Access SFUSD sites are left out. Counts in the district sheet are rounded, so its percentages can differ slightly from the counts shown.</p>
+    <p>Sources: SFUSD <a href="https://docs.google.com/spreadsheets/d/16mtV4GchcWsl6xs6oUrVy6edmNRXzBU6lgbkLlwxiHI/edit?gid=0#gid=0">main round results</a>, <a href="https://docs.google.com/spreadsheets/d/1hatg8laSrgwwH8Zf1z4RPCNF0ICIX7rEXv3aq5f3FDo/edit?gid=1104076014#gid=1104076014">waitlist lengths</a> (updated __UPDATED__) and <a href="https://www.sfusd.edu/node/6542">city-wide schools</a>. Ratings and school locations from <a href="https://www.greatschools.org/california/san-francisco/schools/">GreatSchools</a>, read November 19, 2026. Neighborhood outlines from DataSF.</p>
+    <p><strong>Charter schools.</strong> The 12 charter schools on the map are public and open to any San Francisco family, but each runs its own application. Their admissions details were gathered from each school's website and other public pages in November 2026, so confirm dates with the school. Five Keys, which serves adults and people in custody, is left out, as is Mary L. Booker Leadership Academy, which the state lists as closed.</p>
+  </footer>
+</div>
+
+<script>
+const ROWS = __DATA__;
+// [school, grade, code, program, tag, req, asg, pAsg, sucN, pSuc, sibReq, sibSucN, esaaReq, pEsaa, ntReq, pNt, wInit, wCur, wOff, wLast]
+const SCH = __SCH__;   // school -> [x, y, greatSchoolsRating, greatSchoolsPath, hasAttendanceArea, level]
+const GEO = __GEO__;   // [neighborhood, path, labelX, labelY]
+const CH = __CH__;     // charter school -> { x, y, r, path, grades, lvl, enroll, spt, low, parent, reviews, addr, sub, info }
+const WORLD = { w: 1000, h: __H__ };
+const GRADE_ORDER = ['TK','K','1','2','3','4','5','6','7','8','9','10','11','12'];
+const SELECTIVE = ['Lowell HS', 'Asawa (Ruth) SOTA HS'];
+const LEVELS = [['all', 'All schools'], ['E', 'Elementary and K-8'], ['M', 'Middle'], ['H', 'High'], ['Y', 'Early education']];
+
+const combos = new Map();
+const bySchool = new Map();
+for (const r of ROWS) {
+  const key = r[0] + '|' + r[2];
+  if (!combos.has(key)) {
+    const c = { key, school: r[0], code: r[2], program: r[3], grades: new Map(), esaa: 0, hay: (r[0] + ' ' + r[3]).toLowerCase() };
+    combos.set(key, c);
+    if (!bySchool.has(r[0])) bySchool.set(r[0], []);
+    bySchool.get(r[0]).push(c);
+  }
+  combos.get(key).grades.set(r[1], r);
+  combos.get(key).esaa += r[12] || 0;
+}
+const comboList = [...combos.values()];
+for (const n of Object.keys(CH)) comboList.push({ charter: n, school: n, program: 'Charter school · opens on the map', hay: (n + ' charter').toLowerCase() });
+const PTS = {};
+for (const [n, s] of Object.entries(SCH)) PTS[n] = { x: s[0], y: s[1], r: s[2], cls: s[4] ? 'aa' : 'cw', lvl: s[5] };
+for (const [n, c] of Object.entries(CH)) PTS[n] = { x: c.x, y: c.y, r: c.r, cls: 'ch', lvl: c.lvl };
+
+const state = { key: 'Alvarado ES|GE', grade: 'K', level: 'all', charter: null };
+try {
+  const s = JSON.parse(localStorage.getItem('sfusd-odds') || 'null');
+  if (s && combos.has(s.key)) Object.assign(state, s);
+  if (!CH[state.charter]) state.charter = null;
+} catch (e) { /* storage unavailable: start from the default pick */ }
+function remember() {
+  try { localStorage.setItem('sfusd-odds', JSON.stringify(state)); } catch (e) { /* remembering the pick is optional */ }
+}
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pct = (x) => (x == null ? '—' : Math.round(x * 100) + '%');
+const num = (x) => (x == null ? '—' : x.toLocaleString('en-US'));
+const gradeName = (g) => (/^\d+$/.test(g) ? 'Grade ' + g : g);
+const schoolLabel = (n) => esc(n).replace('K-8', 'K&#8209;8');
+
+function waitlist(r) {
+  const [init, cur, off] = [r[16], r[17], r[18]];
+  if (init == null) return { has: false, odds: SELECTIVE.includes(r[0]) ? 0 : 1 };
+  if (cur === 0) return { has: true, odds: 1, cleared: true };
+  const raw = off / cur;
+  return { has: true, odds: Math.min(1, raw), raw };
+}
+function combine(p, wl) { return p == null ? null : p + (1 - p) * wl; }
+
+// 'school' = city-wide school, 'program' = city-wide program inside a neighborhood school, null = has an attendance area
+function cityWide(r) {
+  if (combos.get(r[0] + '|' + r[2]).esaa > 0) return null;
+  return SCH[r[0]][4] ? 'program' : 'school';
+}
+function schoolKind(name) {
+  if (SCH[name][4]) return name.endsWith(' EES') ? 'Neighborhood tiebreaker through its TK feeder school' : 'Assigned neighborhood for general education';
+  const why = name.endsWith(' K-8') ? 'K-8 school' : name.endsWith(' MS') ? 'middle school' : name.endsWith(' HS') ? 'high school'
+    : name.endsWith(' EES') ? 'early education school' : name.includes('Montessori') ? 'Montessori school' : 'language or newcomer school';
+  return 'City-wide ' + why;
+}
+function badges(name, tag) {
+  const s = SCH[name];
+  const gs = s[3]
+    ? `<a class="badge" href="https://www.greatschools.org${esc(s[3])}" target="_blank" rel="noopener">GreatSchools ${s[2] ? `<b>${s[2]}</b>/10` : 'not rated'}</a>`
+    : '<span class="badge">GreatSchools: no listing</span>';
+  return `<div class="badges"><span class="badge ${s[4] ? 'aa' : 'cw'}"><i></i>${schoolKind(name)}</span>${gs}${tag ? `<span class="badge tag">${esc(tag)}</span>` : ''}</div>`;
+}
+
+function oddsCard(title, sub, p, wl, emptyHead, emptyMsg, extra) {
+  if (p == null) {
+    return `<article class="card"><span class="label">${title}</span><div class="big na">${emptyHead}</div><p class="fine">${emptyMsg}</p></article>`;
+  }
+  const total = combine(p, wl.odds);
+  const add = total - p;
+  return `<article class="card">
+    <span class="label">${title}</span>
+    <div class="big">${pct(total)}</div>
+    <div class="bar" role="img" aria-label="${pct(p)} from the main round, ${pct(add)} more from the waitlist">
+      <i class="m" style="width:${p * 100}%"></i><i class="w" style="width:${add * 100}%"></i>
+    </div>
+    <ul class="split">
+      <li><span class="dot m"></span><b>${pct(p)}</b> main-round success</li>
+      <li><span class="dot w"></span><b>+${pct(add)}</b> from the waitlist (${pct(1 - p)} left × ${pct(wl.odds)})</li>
+    </ul>
+    <p class="fine">${sub}</p>${extra || ''}
+  </article>`;
+}
+
+function waitlistText(r, wl) {
+  if (!wl.has) {
+    return ['—', SELECTIVE.includes(r[0])
+      ? 'No waitlist in the sheet. Admission here is by application, so the combined odds use the main round only.'
+      : 'No waitlist in the sheet, which the district says means nobody is waiting. Combined odds treat a seat as available.'];
+  }
+  if (wl.cleared) return ['100%', 'Nobody is on the waitlist now, so it is treated as cleared.'];
+  return [pct(wl.odds), `${num(r[18])} offers ÷ ${num(r[17])} still waiting` + (wl.raw > 1 ? `, which is ${Math.round(wl.raw * 100)}% and is capped at 100%` : '')];
+}
+
+function renderResult() {
+  const c = combos.get(state.key);
+  const r = c.grades.get(state.grade);
+  const d = (i) => (r[i] == null ? null : r[i] / 100);
+  const wl = waitlist(r);
+  const cw = cityWide(r);
+
+  const nonSibReq = r[5] - r[10];
+  const nonSib = nonSibReq > 0 ? Math.min(1, Math.max(0, (r[8] - r[11]) / nonSibReq)) : null;
+  const nonSibLine = nonSib == null ? '' :
+    `<p class="fine">All non-sibling applicants, tiebreakers included: ${pct(nonSib)} main round, ${pct(combine(nonSib, wl.odds))} combined.</p>`;
+  const [wlValue, wlNote] = waitlistText(r, wl);
+
+  const hoodCard = cw
+    ? oddsCard('Neighborhood tiebreaker only', '', null, wl, 'City-wide', cw === 'school'
+        ? 'This is a city-wide school. It has no attendance area, so living nearby gives no tiebreaker.'
+        : 'This is a city-wide program. The neighborhood tiebreaker at this school only counts for general education.')
+    : oddsCard('Neighborhood tiebreaker only', `${num(r[12])} requests came from the school's attendance area (ESAA).`, d(13), wl,
+        'No data', 'Nobody from the attendance area applied for this grade.');
+
+  $('result').innerHTML = `
+    <div class="stack">
+    <p class="picked">${schoolLabel(r[0])} <span>· ${esc(r[3])} · ${gradeName(r[1])}</span></p>
+    ${badges(r[0], r[4])}
+    <div class="odds">
+      ${oddsCard('No tiebreakers', `${num(r[14])} requests came with no tiebreaker.`, d(15), wl,
+        'No data', 'Nobody applied here without a tiebreaker.', nonSibLine)}
+      ${hoodCard}
+    </div>
+    <section class="ledger">
+      <h2>Raw numbers</h2>
+      <dl>
+        <div class="row"><dt>Assigned in the main round<small>${num(r[6])} of ${num(r[5])} requests, all applicants</small></dt><dd>${pct(d(7))}</dd></div>
+        <div class="row"><dt>Success in the main round<small>${num(r[8])} of ${num(r[5])} got this or a higher-ranked choice</small></dt><dd>${pct(d(9))}</dd></div>
+        <div class="row"><dt>Odds of getting off the waitlist<small>${wlNote}</small></dt><dd>${wlValue}</dd></div>
+      </dl>
+      <div class="trio">
+        <div><strong>${num(r[16])}</strong><span>Initial waitlist (March 16)</span></div>
+        <div><strong>${num(r[17])}</strong><span>Current waitlist</span></div>
+        <div><strong>${num(r[18])}</strong><span>Offers made so far${r[19] != null ? ` · ${num(r[19])} last year` : ''}</span></div>
+      </div>
+    </section>
+    </div>`;
+}
+
+function renderPickers() {
+  const c = combos.get(state.key);
+  if (!c.grades.has(state.grade)) {
+    state.grade = c.grades.has('K') ? 'K' : GRADE_ORDER.find((g) => c.grades.has(g));
+  }
+  $('programs').innerHTML = bySchool.get(c.school).map((p) =>
+    `<button type="button" data-key="${esc(p.key)}" aria-pressed="${p.key === c.key}">${esc(p.program)}</button>`).join('');
+  $('grades').innerHTML = GRADE_ORDER.filter((g) => c.grades.has(g)).map((g) =>
+    `<button type="button" data-grade="${g}" aria-pressed="${g === state.grade}">${g}</button>`).join('');
+  if (document.activeElement !== $('school-q')) $('school-q').value = c.school;
+  remember();
+  renderResult();
+}
+
+$('programs').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.key = b.dataset.key; state.charter = null; renderPickers();
+});
+$('grades').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.grade = b.dataset.grade; renderPickers();
+});
+
+// Search box
+const q = $('school-q'), list = $('school-list');
+let matches = [], active = 0;
+function openList() {
+  const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+  const current = combos.get(state.key);
+  const typed = q.value !== current.school;
+  matches = (typed ? comboList.filter((c) => words.every((w) => c.hay.includes(w))) : comboList).slice(0, 60);
+  active = 0;
+  list.innerHTML = matches.length
+    ? matches.map((c, i) => `<li role="option" id="opt-${i}" data-i="${i}" aria-selected="${i === 0}">${esc(c.school)}<small>${esc(c.program)}</small></li>`).join('')
+    : '<li class="none">No school or program matches that.</li>';
+  list.hidden = false; q.setAttribute('aria-expanded', 'true');
+}
+function closeList() {
+  list.hidden = true; q.setAttribute('aria-expanded', 'false');
+  q.value = combos.get(state.key).school;
+}
+function choose(i) {
+  if (!matches[i]) return;
+  if (matches[i].charter) { state.charter = matches[i].charter; q.blur(); closeList(); showView('map'); return; }
+  state.key = matches[i].key; state.charter = null; q.blur(); closeList(); renderPickers();
+}
+function setActive(i) {
+  if (!matches.length) return;
+  active = (i + matches.length) % matches.length;
+  [...list.children].forEach((li, j) => li.setAttribute('aria-selected', j === active));
+  list.children[active].scrollIntoView({ block: 'nearest' });
+  q.setAttribute('aria-activedescendant', 'opt-' + active);
+}
+q.addEventListener('focus', () => { q.select(); openList(); });
+q.addEventListener('input', openList);
+q.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); list.hidden ? openList() : setActive(active + 1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(active - 1); }
+  else if (e.key === 'Enter') { e.preventDefault(); choose(active); }
+  else if (e.key === 'Escape') { q.blur(); }
+});
+q.addEventListener('blur', () => setTimeout(closeList, 120));
+list.addEventListener('mousedown', (e) => {
+  const li = e.target.closest('li[data-i]'); if (!li) return;
+  e.preventDefault(); choose(+li.dataset.i);
+});
+
+// ---------- Map ----------
+const map = $('map'), tip = $('tip');
+const schoolNames = Object.keys(PTS);
+let view = { x: 0, y: 0, w: WORLD.w, h: WORLD.h };
+let mapBuilt = false;
+
+function selectedSchool() { return state.charter || combos.get(state.key).school; }
+
+function buildMap() {
+  $('hoods').innerHTML = GEO.map((g) => `<path class="hood" d="${g[1]}"></path>`).join('');
+  $('names').innerHTML = GEO.map((g) => `<g class="lbl" data-x="${g[2]}" data-y="${g[3]}"><text class="hood-name">${esc(g[0])}</text></g>`).join('');
+  $('dots').innerHTML = schoolNames.map((n, i) => {
+    const s = PTS[n];
+    const label = `${n}, ${CH[n] ? 'Charter school' : schoolKind(n)}, GreatSchools ${s.r ? s.r + ' out of 10' : 'not rated'}`;
+    return `<g class="dot-g lbl ${s.cls}" data-i="${i}" data-x="${s.x}" data-y="${s.y}" tabindex="0" role="button" aria-label="${esc(label)}">
+      <circle r="9"></circle><text y="3.5">${s.r || ''}</text></g>`;
+  }).join('');
+  $('levels').innerHTML = LEVELS.map(([k, t]) => `<button type="button" data-level="${k}">${t}</button>`).join('');
+  mapBuilt = true;
+  fitMap();
+}
+function fitMap() {
+  const b = map.getBoundingClientRect();
+  if (!b.width) return;
+  const box = { x: -15, y: 40, w: 1030, h: WORLD.h - 25 };   // tall enough to keep Treasure Island's charter school in frame
+  const a = b.width / b.height;
+  let w = box.w, h = box.h;
+  if (a > w / h) w = h * a; else h = w / a;
+  view = { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
+  applyView();
+}
+function applyView() {
+  map.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+  const b = map.getBoundingClientRect();
+  const k = view.w / (b.width || 1);          // world units per screen pixel, keeps dots and labels a constant size
+  for (const g of map.querySelectorAll('.lbl')) {
+    g.setAttribute('transform', `translate(${g.dataset.x} ${g.dataset.y}) scale(${k})`);
+  }
+  $('names').style.display = k < 1.45 ? '' : 'none';   // neighborhood names only once zoomed in enough to fit
+}
+function zoomAt(factor, cx, cy) {
+  const b = map.getBoundingClientRect();
+  const px = cx == null ? 0.5 : (cx - b.left) / b.width, py = cy == null ? 0.5 : (cy - b.top) / b.height;
+  const nw = Math.min(WORLD.w * 2.5, Math.max(60, view.w * factor));
+  const f = nw / view.w;
+  view = { x: view.x + view.w * px * (1 - f), y: view.y + view.h * py * (1 - f), w: nw, h: view.h * f };
+  applyView();
+}
+function renderMapState() {
+  const sel = selectedSchool();
+  for (const g of $('dots').children) {
+    const n = schoolNames[+g.dataset.i];
+    const show = state.level === 'all' || PTS[n].lvl === state.level || n === sel;
+    if (show) g.removeAttribute('hidden'); else g.setAttribute('hidden', '');
+    g.classList.toggle('sel', n === sel);
+    g.setAttribute('aria-pressed', n === sel);
+  }
+  const selEl = $('dots').querySelector('.sel');
+  if (selEl) $('dots').appendChild(selEl);
+  for (const b of $('levels').children) b.setAttribute('aria-pressed', b.dataset.level === state.level);
+}
+
+function charterPanel(name) {
+  const c = CH[name], a = c.info || {};
+  const fact = (k, v) => (v ? `<div class="row"><dt>${k}</dt><dd>${v}</dd></div>` : '');
+  const link = (u, text) => (u && /^https?:/.test(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${text}</a>` : '');
+  const sub = Object.entries(c.sub || {}).map(([k, v]) => `${esc(k.replace(' Rating', '').toLowerCase())} ${v}/10`).join(', ');
+  const links = [link(a.website, 'School website'), link(a.apply_url, 'How to apply')].filter(Boolean).join(' · ');
+  const demand = a.demand_numbers ? esc(a.demand_numbers) + (link(a.demand_source_url, 'source') ? ` (${link(a.demand_source_url, 'source')})` : '') : '';
+  const admissions = [fact('How admission works', a.how_admission_works && esc(a.how_admission_works)),
+    fact('Grades taking new students', a.entry_grades && esc(a.entry_grades)),
+    fact('Lottery preferences', a.preferences && esc(a.preferences)),
+    fact('Deadline', a.deadline && esc(a.deadline)),
+    fact('Published demand', demand),
+    fact('Good to know', a.notes && esc(a.notes)),
+    fact('Links', links)].join('');
+  return `<div class="stack" style="gap:14px">
+    <p class="picked">${esc(name)}</p>
+    <div class="badges"><span class="badge ch"><i></i>Charter school, city-wide, not run by SFUSD</span>
+      <a class="badge" href="https://www.greatschools.org${esc(c.path)}" target="_blank" rel="noopener">GreatSchools ${c.r ? `<b>${c.r}</b>/10` : 'not rated'}</a></div>
+    <p class="fine">Charter schools run their own admissions outside the SFUSD lottery and do not publish main-round or waitlist counts, so there are no odds here. Anyone in the city can apply and there is no neighborhood tiebreaker.</p>
+    <section class="ledger facts"><h2>Admissions</h2><dl>${admissions || '<div class="row"><dt>Details</dt><dd>Nothing found online.</dd></div>'}</dl></section>
+    <section class="ledger facts"><h2>School facts from GreatSchools</h2><dl>
+      ${fact('Grades', esc(c.grades))}
+      ${fact('Enrollment', c.enroll && num(c.enroll) + ' students')}
+      ${fact('Students per teacher', c.spt)}
+      ${fact('Low-income students', c.low && esc(c.low))}
+      ${fact('Rating breakdown', sub)}
+      ${fact('Parent reviews', c.parent && `${c.parent} of 5 from ${c.reviews} review${c.reviews === 1 ? '' : 's'}`)}
+      ${fact('Address', esc(c.addr))}
+    </dl></section>
+  </div>`;
+}
+function renderPanel() {
+  if (state.charter) { $('map-panel').innerHTML = charterPanel(state.charter); return; }
+  const name = selectedSchool();
+  const progs = bySchool.get(name);
+  const grades = GRADE_ORDER.filter((g) => progs.some((p) => p.grades.has(g)));
+  if (!grades.includes(state.grade)) state.grade = grades.includes('K') ? 'K' : grades[0];
+  const rows = progs.filter((p) => p.grades.has(state.grade)).map((p) => {
+    const r = p.grades.get(state.grade);
+    const d = (i) => (r[i] == null ? null : r[i] / 100);
+    const wl = waitlist(r), cw = cityWide(r);
+    const [wlValue] = waitlistText(r, wl);
+    const hood = cw ? '<td class="dim">City-wide</td>'
+      : `<td class="key">${pct(combine(d(13), wl.odds))}<span class="sub">${d(13) == null ? 'no applicants' : pct(d(13)) + ' main round'}</span></td>`;
+    return `<tr>
+      <td><button type="button" class="linkbtn" data-key="${esc(p.key)}">${esc(p.program)}</button>${r[4] ? `<span class="sub">${esc(r[4])}</span>` : ''}</td>
+      <td class="key">${pct(combine(d(15), wl.odds))}<span class="sub">${d(15) == null ? 'no applicants' : pct(d(15)) + ' main round'}</span></td>
+      ${hood}
+      <td>${pct(d(7))}<span class="sub">${num(r[6])} of ${num(r[5])}</span></td>
+      <td>${pct(d(9))}<span class="sub">${num(r[8])} of ${num(r[5])}</span></td>
+      <td>${wlValue}${wl.raw > 1 ? '<span class="sub">capped</span>' : !wl.has ? '<span class="sub">no waitlist</span>' : ''}</td>
+      <td>${num(r[16])}</td><td>${num(r[17])}</td><td>${num(r[18])}</td>
+    </tr>`;
+  }).join('');
+  $('map-panel').innerHTML = `
+    <div class="stack" style="gap:14px">
+      <p class="picked">${schoolLabel(name)}</p>
+      ${badges(name)}
+      <div class="field">
+        <span class="label" id="mgrade-label">Grade</span>
+        <div class="chips grades" id="mgrades" role="group" aria-labelledby="mgrade-label">
+          ${grades.map((g) => `<button type="button" data-grade="${g}" aria-pressed="${g === state.grade}">${g}</button>`).join('')}
+        </div>
+      </div>
+      <div class="tablebox"><table>
+        <thead><tr>
+          <th scope="col">Program, ${gradeName(state.grade)}</th>
+          <th scope="col">Odds, no tiebreakers</th>
+          <th scope="col">Odds, neighborhood tiebreaker</th>
+          <th scope="col">Assigned in main round</th>
+          <th scope="col">Success in main round</th>
+          <th scope="col">Odds off waitlist</th>
+          <th scope="col">Initial waitlist</th>
+          <th scope="col">Current waitlist</th>
+          <th scope="col">Offers so far</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <p class="fine">Odds columns combine the main round with the waitlist. Select a program name to open its full breakdown in Lookup.</p>
+    </div>`;
+}
+function selectSchool(name) {
+  if (CH[name]) state.charter = name;
+  else {
+    if (state.charter || name !== selectedSchool()) {
+      const progs = bySchool.get(name);
+      state.key = (progs.find((p) => p.code === 'GE') || progs[0]).key;
+    }
+    state.charter = null;
+  }
+  refreshMap();
+}
+function refreshMap() { renderPanel(); renderMapState(); remember(); }
+
+$('map-panel').addEventListener('click', (e) => {
+  const g = e.target.closest('[data-grade]');
+  if (g) { state.grade = g.dataset.grade; refreshMap(); return; }
+  const k = e.target.closest('[data-key]');
+  if (k) { state.key = k.dataset.key; showView('lookup'); }
+});
+$('levels').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.level = b.dataset.level; renderMapState(); remember();
+});
+$('zin').addEventListener('click', () => zoomAt(0.6));
+$('zout').addEventListener('click', () => zoomAt(1 / 0.6));
+$('zfit').addEventListener('click', fitMap);
+map.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 0.85 : 1 / 0.85, e.clientX, e.clientY); }, { passive: false });
+map.addEventListener('keydown', (e) => {
+  const g = e.target.closest('.dot-g');
+  if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectSchool(schoolNames[+g.dataset.i]); }
+});
+
+const pointers = new Map();
+let gesture = null;
+map.addEventListener('pointerdown', (e) => {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const dot = e.target.closest('.dot-g');
+  gesture = { moved: 0, dot: dot ? schoolNames[+dot.dataset.i] : null, pinch: null };
+  map.setPointerCapture(e.pointerId);
+  tip.hidden = true;
+});
+map.addEventListener('pointermove', (e) => {
+  const prev = pointers.get(e.pointerId);
+  if (!prev) {
+    const dot = e.target.closest && e.target.closest('.dot-g');
+    if (dot && e.pointerType === 'mouse') {
+      const b = map.parentElement.getBoundingClientRect();
+      tip.textContent = schoolNames[+dot.dataset.i];
+      tip.style.left = (e.clientX - b.left) + 'px'; tip.style.top = (e.clientY - b.top) + 'px';
+      tip.hidden = false;
+    } else tip.hidden = true;
+    return;
+  }
+  const b = map.getBoundingClientRect();
+  if (pointers.size === 2) {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const [p1, p2] = [...pointers.values()];
+    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    if (gesture.pinch) zoomAt(gesture.pinch / dist, (p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
+    gesture.pinch = dist; gesture.moved = 99;
+    return;
+  }
+  const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  gesture.moved += Math.abs(dx) + Math.abs(dy);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gesture.moved > 5) {
+    map.classList.add('dragging');
+    view.x -= dx * view.w / b.width; view.y -= dy * view.w / b.width;
+    map.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+  }
+});
+function endPointer(e) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (gesture) gesture.pinch = null;
+  if (pointers.size === 0) {
+    map.classList.remove('dragging');
+    if (e.type === 'pointerup' && gesture && gesture.moved <= 5 && gesture.dot) selectSchool(gesture.dot);
+    gesture = null;
+  }
+}
+map.addEventListener('pointerup', endPointer);
+map.addEventListener('pointercancel', endPointer);
+map.addEventListener('pointerleave', () => { tip.hidden = true; });
+window.addEventListener('resize', () => { if (!$('view-map').hidden) applyView(); });
+
+// ---------- Views ----------
+function showView(v, fromHash) {
+  const isMap = v === 'map';
+  $('view-map').hidden = !isMap; $('view-lookup').hidden = isMap;
+  $('tab-map').setAttribute('aria-selected', isMap); $('tab-lookup').setAttribute('aria-selected', !isMap);
+  $('page').classList.toggle('wide', isMap);
+  if (isMap) {
+    if (!mapBuilt) buildMap(); else applyView();
+    refreshMap();
+  } else renderPickers();
+  if (!fromHash && location.hash !== '#' + v) { try { history.replaceState(null, '', '#' + v); } catch (e) { location.hash = v; } }
+}
+$('tab-lookup').addEventListener('click', () => showView('lookup'));
+$('tab-map').addEventListener('click', () => showView('map'));
+window.addEventListener('hashchange', () => showView(location.hash === '#map' ? 'map' : 'lookup', true));
+showView(location.hash === '#map' ? 'map' : 'lookup', true);
+</script>
