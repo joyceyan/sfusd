@@ -31,6 +31,6 @@ locations are at the top of the matching section.
 
 - Combined odds = main-round success + (1 − main-round success) × waitlist odds.
 - Main-round rates exclude sibling applicants: (all − sibling) successes ÷ (all − sibling) requests. Siblings are placed almost every time.
-- Waitlist odds = offers made so far ÷ current waitlist length, capped at 100%. No waitlist row means nobody is waiting.
+- Waitlist odds = offers made so far ÷ (offers made so far + current waitlist length). No waitlist row means nobody is waiting.
 - A program counts as neighborhood-based when the sheet shows attendance-area applicants for it; everything else is city-wide.
 - Special education (SDC) programs and Access SFUSD sites are excluded.

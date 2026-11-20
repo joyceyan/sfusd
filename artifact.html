@@ -245,7 +245,7 @@ td a { color: var(--main); font-weight: 600; }
   </div>
 
   <footer class="notes">
-    <p><strong>How the odds are built.</strong> Combined odds = main-round success + (1 − main-round success) × waitlist odds. Main-round success means being assigned this program or one the family ranked higher. Sibling applicants are taken out of every main-round figure, because they are placed almost every time: each rate is (all applicants − sibling applicants) on both the top and the bottom. The neighborhood figure is the sheet's attendance-area rate as published, which cannot be split by sibling status. Waitlist odds are offers made so far divided by the current waitlist length, capped at 100%, and the same waitlist odds are applied to every applicant whatever their tiebreakers.</p>
+    <p><strong>How the odds are built.</strong> Combined odds = main-round success + (1 − main-round success) × waitlist odds. Main-round success means being assigned this program or one the family ranked higher. Sibling applicants are taken out of every main-round figure, because they are placed almost every time: each rate is (all applicants − sibling applicants) on both the top and the bottom. The neighborhood figure is the sheet's attendance-area rate as published, which cannot be split by sibling status. Waitlist odds are offers made so far divided by (offers made so far + current waitlist length), and the same waitlist odds are applied to every applicant whatever their tiebreakers.</p>
     <p><strong>City-wide or assigned neighborhood.</strong> SFUSD treats K-8 schools, SF Public Montessori, schools where every student is in a language or newcomer program, early education schools, middle schools and high schools as city-wide: they have no attendance area, so living nearby gives no tiebreaker. Language programs inside a neighborhood school are city-wide programs too. General education TK feeder programs at early education schools are the exception: they give a tiebreaker to families in the feeder elementary school's attendance area. The split here follows the sheet, marking a program as neighborhood-based when it has attendance-area applicants.</p>
     <p>Special education (SDC) programs and Access SFUSD sites are left out. Counts in the district sheet are rounded, so its percentages can differ slightly from the counts shown.</p>
     <p>Sources: SFUSD <a href="https://docs.google.com/spreadsheets/d/16mtV4GchcWsl6xs6oUrVy6edmNRXzBU6lgbkLlwxiHI/edit?gid=0#gid=0">main round results</a>, <a href="https://docs.google.com/spreadsheets/d/1hatg8laSrgwwH8Zf1z4RPCNF0ICIX7rEXv3aq5f3FDo/edit?gid=1104076014#gid=1104076014">waitlist lengths</a> (updated August 31, 2026) and <a href="https://www.sfusd.edu/node/6542">city-wide schools</a>. Ratings and school locations from <a href="https://www.greatschools.org/california/san-francisco/schools/">GreatSchools</a>, read November 19, 2026. Neighborhood outlines from DataSF.</p>
@@ -304,8 +304,7 @@ function waitlist(r) {
   const [init, cur, off] = [r[16], r[17], r[18]];
   if (init == null) return { has: false, odds: SELECTIVE.includes(r[0]) ? 0 : 1 };
   if (cur === 0) return { has: true, odds: 1, cleared: true };
-  const raw = off / cur;
-  return { has: true, odds: Math.min(1, raw), raw };
+  return { has: true, odds: off / (off + cur) };
 }
 // Main-round counts with sibling applicants taken out: siblings are placed almost every time, so they inflate the rates.
 function nonSibling(r) {
@@ -361,7 +360,7 @@ function waitlistText(r, wl) {
       : 'No waitlist in the sheet, which the district says means nobody is waiting. Combined odds treat a seat as available.'];
   }
   if (wl.cleared) return ['100%', 'Nobody is on the waitlist now, so it is treated as cleared.'];
-  return [pct(wl.odds), `${num(r[18])} offers ÷ ${num(r[17])} still waiting` + (wl.raw > 1 ? `, which is ${Math.round(wl.raw * 100)}% and is capped at 100%` : '')];
+  return [pct(wl.odds), `${num(r[18])} offers ÷ (${num(r[18])} offers + ${num(r[17])} still waiting)`];
 }
 
 function renderResult() {
@@ -587,7 +586,7 @@ function renderPanel() {
       ${hood}
       <td>${pct(ns.pAsg)}<span class="sub">${num(ns.asg)} of ${num(ns.req)}</span></td>
       <td>${pct(ns.pSuc)}<span class="sub">${num(ns.suc)} of ${num(ns.req)}</span></td>
-      <td>${wlValue}${wl.raw > 1 ? '<span class="sub">capped</span>' : !wl.has ? '<span class="sub">no waitlist</span>' : ''}</td>
+      <td>${wlValue}${!wl.has ? '<span class="sub">no waitlist</span>' : ''}</td>
       <td>${num(r[16])}</td><td>${num(r[17])}</td><td>${num(r[18])}</td>
     </tr>`;
   }).join('');
@@ -751,7 +750,7 @@ function renderCity() {
       <td class="key">${pct(it.odds)}</td>
       <td>${pct(it.asg)}<span class="sub">${num(it.ns.asg)} of ${num(it.ns.req)}</span></td>
       <td>${pct(it.suc)}<span class="sub">${num(it.ns.suc)} of ${num(it.ns.req)}</span></td>
-      <td>${wlValue}${it.wlInfo.raw > 1 ? '<span class="sub">capped</span>' : !it.wlInfo.has ? '<span class="sub">no waitlist</span>' : ''}</td>
+      <td>${wlValue}${!it.wlInfo.has ? '<span class="sub">no waitlist</span>' : ''}</td>
       <td>${num(it.init)}</td><td>${num(it.cur)}</td><td>${num(it.off)}</td></tr>`;
   }).join('');
   $('city-table').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body || '<tr><td colspan="9">Nothing city-wide takes new students in this grade.</td></tr>'}</tbody>`;
