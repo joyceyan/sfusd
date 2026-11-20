@@ -164,6 +164,10 @@ td.dim { color: var(--muted); font-size: 13px; }
 .facts .row dt { color: var(--muted); font-size: 14px; }
 .facts a { color: var(--main); }
 @media (max-width: 520px) { .facts .row { grid-template-columns: minmax(0, 1fr); } }
+.sortbtn { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+.sortbtn:hover { color: var(--ink); }
+th[aria-sort] .sortbtn { color: var(--ink); }
+td a { color: var(--main); font-weight: 600; }
 .linkbtn { font: inherit; font-weight: 600; color: var(--main); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
 
 .notes { border-top: 1px solid var(--line); padding-top: 16px; color: var(--muted); font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
@@ -182,6 +186,7 @@ td.dim { color: var(--muted); font-size: 13px; }
     <div class="tabs" role="tablist" aria-label="View">
       <button type="button" role="tab" id="tab-lookup" aria-controls="view-lookup" aria-selected="true">Lookup</button>
       <button type="button" role="tab" id="tab-map" aria-controls="view-map" aria-selected="false">Map</button>
+      <button type="button" role="tab" id="tab-citywide" aria-controls="view-citywide" aria-selected="false">City-wide</button>
     </div>
   </header>
 
@@ -230,6 +235,24 @@ td.dim { color: var(--muted); font-size: 13px; }
     <section id="map-panel" aria-live="polite"></section>
   </div>
 
+  <div id="view-citywide" role="tabpanel" aria-labelledby="tab-citywide" class="stack" hidden>
+    <p class="lede" style="margin:0">Schools anyone in San Francisco can apply to without a neighborhood tiebreaker, compared for one grade. Select a column heading to sort.</p>
+    <div class="field">
+      <span class="label" id="cgrade-label">Grade</span>
+      <div class="chips grades" id="cgrades" role="group" aria-labelledby="cgrade-label"></div>
+    </div>
+    <div class="field">
+      <span class="label" id="cscope-label">Include</span>
+      <div class="chips" id="cscope" role="group" aria-labelledby="cscope-label">
+        <button type="button" data-scope="school">City-wide schools</button>
+        <button type="button" data-scope="all">Also city-wide programs at neighborhood schools</button>
+      </div>
+    </div>
+    <p class="fine" id="city-count"></p>
+    <div class="tablebox"><table id="city-table"></table></div>
+    <p class="fine">Main-round figures exclude sibling applicants. Charter schools run their own lotteries and publish no counts, so they show a rating only.</p>
+  </div>
+
   <footer class="notes">
     <p><strong>How the odds are built.</strong> Combined odds = main-round success + (1 − main-round success) × waitlist odds. Main-round success means being assigned this program or one the family ranked higher. Sibling applicants are taken out of every main-round figure, because they are placed almost every time: each rate is (all applicants − sibling applicants) on both the top and the bottom. The neighborhood figure is the sheet's attendance-area rate as published, which cannot be split by sibling status. Waitlist odds are offers made so far divided by the current waitlist length, capped at 100%, and the same waitlist odds are applied to every applicant whatever their tiebreakers.</p>
     <p><strong>City-wide or assigned neighborhood.</strong> SFUSD treats K-8 schools, SF Public Montessori, schools where every student is in a language or newcomer program, early education schools, middle schools and high schools as city-wide: they have no attendance area, so living nearby gives no tiebreaker. Language programs inside a neighborhood school are city-wide programs too. General education TK feeder programs at early education schools are the exception: they give a tiebreaker to families in the feeder elementary school's attendance area. The split here follows the sheet, marking a program as neighborhood-based when it has attendance-area applicants.</p>
@@ -269,7 +292,7 @@ const PTS = {};
 for (const [n, s] of Object.entries(SCH)) PTS[n] = { x: s[0], y: s[1], r: s[2], cls: s[4] ? 'aa' : 'cw', lvl: s[5] };
 for (const [n, c] of Object.entries(CH)) PTS[n] = { x: c.x, y: c.y, r: c.r, cls: 'ch', lvl: c.lvl };
 
-const state = { key: 'Alvarado ES|GE', grade: 'K', level: 'all', charter: null };
+const state = { key: 'Alvarado ES|GE', grade: 'K', level: 'all', charter: null, cgrade: 'K', cscope: 'school', csort: { col: 'gs', dir: -1 } };
 try {
   const s = JSON.parse(localStorage.getItem('sfusd-odds') || 'null');
   if (s && combos.has(s.key)) Object.assign(state, s);
@@ -691,21 +714,101 @@ map.addEventListener('pointerleave', () => { tip.hidden = true; });
 window.addEventListener('resize', () => { if (!$('view-map').hidden) applyView(); });
 
 // ---------- Views ----------
+// ---------- City-wide table ----------
+const CITY_COLS = [['name', 'School and program'], ['gs', 'GreatSchools rating'], ['odds', 'Odds, no sibling tiebreaker'], ['asg', 'Assigned in main round'],
+  ['suc', 'Success in main round'], ['wl', 'Odds off waitlist'], ['init', 'Initial waitlist'], ['cur', 'Current waitlist'], ['off', 'Offers so far']];
+function charterHasGrade(c, g) {
+  const [lo, hi] = c.grades.split('-');
+  const i = GRADE_ORDER.indexOf(g);
+  return i >= GRADE_ORDER.indexOf(lo) && i <= GRADE_ORDER.indexOf(hi || lo);
+}
+function renderCity() {
+  const g = state.cgrade, items = [];
+  for (const c of combos.values()) {
+    const r = c.grades.get(g);
+    if (!r) continue;
+    const cw = cityWide(r);
+    if (!cw || (state.cscope === 'school' && cw !== 'school')) continue;
+    const wl = waitlist(r), ns = nonSibling(r);
+    items.push({ name: c.school, program: c.program, key: c.key, gs: SCH[c.school][2], gsPath: SCH[c.school][3], r, wlInfo: wl, ns,
+      odds: combine(ns.pSuc, wl.odds), asg: ns.pAsg, suc: ns.pSuc, wl: wl.has ? wl.odds : null, init: r[16], cur: r[17], off: r[18] });
+  }
+  for (const [n, c] of Object.entries(CH)) {
+    if (charterHasGrade(c, g)) items.push({ name: n, program: 'Charter school, own lottery', charter: true, gs: c.r, gsPath: c.path });
+  }
+  const { col, dir } = state.csort;
+  items.sort((a, b) => {
+    const x = a[col], y = b[col];
+    if (x == null && y == null) return a.name.localeCompare(b.name);
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return (col === 'name' ? x.localeCompare(y) : x - y) * dir || a.name.localeCompare(b.name);
+  });
+  const head = CITY_COLS.map(([k, label]) => {
+    const on = k === col;
+    return `<th scope="col"${on ? ` aria-sort="${dir > 0 ? 'ascending' : 'descending'}"` : ''}><button type="button" class="sortbtn" data-col="${k}">${label}${on ? (dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`;
+  }).join('');
+  const body = items.map((it) => {
+    const gs = it.gsPath ? `<a href="https://www.greatschools.org${esc(it.gsPath)}" target="_blank" rel="noopener">${it.gs ? it.gs + '/10' : 'not rated'}</a>` : '—';
+    if (it.charter) {
+      return `<tr><td><button type="button" class="linkbtn" data-charter="${esc(it.name)}">${schoolLabel(it.name)}</button><span class="sub">${it.program}</span></td>
+        <td class="key">${gs}</td><td class="dim" colspan="7">Not published. Select the school for its admissions details.</td></tr>`;
+    }
+    const [wlValue] = waitlistText(it.r, it.wlInfo);
+    return `<tr><td><button type="button" class="linkbtn" data-key="${esc(it.key)}">${schoolLabel(it.name)}</button><span class="sub">${esc(it.program)}</span></td>
+      <td class="key">${gs}</td>
+      <td class="key">${pct(it.odds)}</td>
+      <td>${pct(it.asg)}<span class="sub">${num(it.ns.asg)} of ${num(it.ns.req)}</span></td>
+      <td>${pct(it.suc)}<span class="sub">${num(it.ns.suc)} of ${num(it.ns.req)}</span></td>
+      <td>${wlValue}${it.wlInfo.raw > 1 ? '<span class="sub">capped</span>' : !it.wlInfo.has ? '<span class="sub">no waitlist</span>' : ''}</td>
+      <td>${num(it.init)}</td><td>${num(it.cur)}</td><td>${num(it.off)}</td></tr>`;
+  }).join('');
+  $('city-table').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body || '<tr><td colspan="9">Nothing city-wide takes new students in this grade.</td></tr>'}</tbody>`;
+  $('city-count').textContent = `${items.length} city-wide option${items.length === 1 ? '' : 's'} for ${gradeName(g)}.`;
+  $('cgrades').innerHTML = GRADE_ORDER.map((x) => `<button type="button" data-grade="${x}" aria-pressed="${x === g}">${x}</button>`).join('');
+  for (const b of $('cscope').children) b.setAttribute('aria-pressed', b.dataset.scope === state.cscope);
+  remember();
+}
+$('cgrades').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.cgrade = b.dataset.grade; renderCity();
+});
+$('cscope').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.cscope = b.dataset.scope; renderCity();
+});
+$('city-table').addEventListener('click', (e) => {
+  const s = e.target.closest('[data-col]');
+  if (s) {
+    const col = s.dataset.col;
+    state.csort = { col, dir: state.csort.col === col ? -state.csort.dir : (col === 'name' ? 1 : -1) };
+    renderCity(); return;
+  }
+  const k = e.target.closest('[data-key]');
+  if (k) { state.key = k.dataset.key; state.charter = null; state.grade = state.cgrade; showView('lookup'); return; }
+  const c = e.target.closest('[data-charter]');
+  if (c) { state.charter = c.dataset.charter; showView('map'); }
+});
+
+// ---------- Views ----------
+const VIEWS = ['lookup', 'map', 'citywide'];
 function showView(v, fromHash) {
-  const isMap = v === 'map';
-  $('view-map').hidden = !isMap; $('view-lookup').hidden = isMap;
-  $('tab-map').setAttribute('aria-selected', isMap); $('tab-lookup').setAttribute('aria-selected', !isMap);
-  $('page').classList.toggle('wide', isMap);
-  if (isMap) {
+  if (!VIEWS.includes(v)) v = 'lookup';
+  for (const name of VIEWS) {
+    $('view-' + name).hidden = name !== v;
+    $('tab-' + name).setAttribute('aria-selected', name === v);
+  }
+  $('page').classList.toggle('wide', v !== 'lookup');
+  if (v === 'map') {
     if (!mapBuilt) buildMap(); else applyView();
     refreshMap();
-  } else renderPickers();
+  } else if (v === 'citywide') renderCity();
+  else renderPickers();
   if (!fromHash && location.hash !== '#' + v) { try { history.replaceState(null, '', '#' + v); } catch (e) { location.hash = v; } }
 }
-$('tab-lookup').addEventListener('click', () => showView('lookup'));
-$('tab-map').addEventListener('click', () => showView('map'));
-window.addEventListener('hashchange', () => showView(location.hash === '#map' ? 'map' : 'lookup', true));
-showView(location.hash === '#map' ? 'map' : 'lookup', true);
+for (const name of VIEWS) $('tab-' + name).addEventListener('click', () => showView(name));
+window.addEventListener('hashchange', () => showView(location.hash.slice(1), true));
+showView(location.hash.slice(1), true);
 </script>
 </body>
 </html>
