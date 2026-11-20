@@ -20,7 +20,7 @@ for r in a:
         continue
     w = B.get(r[1])
     rows.append([r[3], r[4], r[5], r[6], r[0], n(r[7]), n(r[8]), p(r[9]), n(r[10]), p(r[11]), n(r[12]), n(r[15]),
-                 n(r[17]), p(r[21]), n(r[32]), p(r[36])] + ([n(w[6]), n(w[7]), n(w[8]), n(w[9])] if w else [None] * 4))
+                 n(r[17]), p(r[21]), n(r[32]), p(r[36])] + ([n(w[6]), n(w[7]), n(w[8]), n(w[9])] if w else [None] * 4) + [n(r[13])])
     esaa[r[3]] += n(r[17])
 schools = sorted({r[0] for r in rows})
 aa = {s for s in schools if esaa[s] > 0}

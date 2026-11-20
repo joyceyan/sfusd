@@ -222,7 +222,7 @@ td.dim { color: var(--muted); font-size: 13px; }
   </div>
 
   <footer class="notes">
-    <p><strong>How the odds are built.</strong> Combined odds = main-round success + (1 − main-round success) × waitlist odds. Main-round success means being assigned this program or one the family ranked higher. Waitlist odds are offers made so far divided by the current waitlist length, capped at 100%, and the same waitlist odds are applied to every applicant whatever their tiebreakers.</p>
+    <p><strong>How the odds are built.</strong> Combined odds = main-round success + (1 − main-round success) × waitlist odds. Main-round success means being assigned this program or one the family ranked higher. Sibling applicants are taken out of every main-round figure, because they are placed almost every time: each rate is (all applicants − sibling applicants) on both the top and the bottom. The neighborhood figure is the sheet's attendance-area rate as published, which cannot be split by sibling status. Waitlist odds are offers made so far divided by the current waitlist length, capped at 100%, and the same waitlist odds are applied to every applicant whatever their tiebreakers.</p>
     <p><strong>City-wide or assigned neighborhood.</strong> SFUSD treats K-8 schools, SF Public Montessori, schools where every student is in a language or newcomer program, early education schools, middle schools and high schools as city-wide: they have no attendance area, so living nearby gives no tiebreaker. Language programs inside a neighborhood school are city-wide programs too. General education TK feeder programs at early education schools are the exception: they give a tiebreaker to families in the feeder elementary school's attendance area. The split here follows the sheet, marking a program as neighborhood-based when it has attendance-area applicants.</p>
     <p>Special education (SDC) programs and Access SFUSD sites are left out. Counts in the district sheet are rounded, so its percentages can differ slightly from the counts shown.</p>
     <p>Sources: SFUSD <a href="https://docs.google.com/spreadsheets/d/16mtV4GchcWsl6xs6oUrVy6edmNRXzBU6lgbkLlwxiHI/edit?gid=0#gid=0">main round results</a>, <a href="https://docs.google.com/spreadsheets/d/1hatg8laSrgwwH8Zf1z4RPCNF0ICIX7rEXv3aq5f3FDo/edit?gid=1104076014#gid=1104076014">waitlist lengths</a> (updated __UPDATED__) and <a href="https://www.sfusd.edu/node/6542">city-wide schools</a>. Ratings and school locations from <a href="https://www.greatschools.org/california/san-francisco/schools/">GreatSchools</a>, read November 19, 2026. Neighborhood outlines from DataSF.</p>
@@ -232,7 +232,7 @@ td.dim { color: var(--muted); font-size: 13px; }
 
 <script>
 const ROWS = __DATA__;
-// [school, grade, code, program, tag, req, asg, pAsg, sucN, pSuc, sibReq, sibSucN, esaaReq, pEsaa, ntReq, pNt, wInit, wCur, wOff, wLast]
+// [school, grade, code, program, tag, req, asg, pAsg, sucN, pSuc, sibReq, sibSucN, esaaReq, pEsaa, ntReq, pNt, wInit, wCur, wOff, wLast, sibAsg]
 const SCH = __SCH__;   // school -> [x, y, greatSchoolsRating, greatSchoolsPath, hasAttendanceArea, level]
 const GEO = __GEO__;   // [neighborhood, path, labelX, labelY]
 const CH = __CH__;     // charter school -> { x, y, r, path, grades, lvl, enroll, spt, low, parent, reviews, addr, sub, info }
@@ -283,6 +283,12 @@ function waitlist(r) {
   if (cur === 0) return { has: true, odds: 1, cleared: true };
   const raw = off / cur;
   return { has: true, odds: Math.min(1, raw), raw };
+}
+// Main-round counts with sibling applicants taken out: siblings are placed almost every time, so they inflate the rates.
+function nonSibling(r) {
+  const req = r[5] - r[10], asg = Math.max(0, r[6] - r[20]), suc = Math.max(0, r[8] - r[11]);
+  if (req <= 0) return { req: 0, asg: 0, suc: 0, pAsg: null, pSuc: null };
+  return { req, asg, suc, pAsg: Math.min(1, asg / req), pSuc: Math.min(1, suc / req) };
 }
 function combine(p, wl) { return p == null ? null : p + (1 - p) * wl; }
 
@@ -342,10 +348,9 @@ function renderResult() {
   const wl = waitlist(r);
   const cw = cityWide(r);
 
-  const nonSibReq = r[5] - r[10];
-  const nonSib = nonSibReq > 0 ? Math.min(1, Math.max(0, (r[8] - r[11]) / nonSibReq)) : null;
-  const nonSibLine = nonSib == null ? '' :
-    `<p class="fine">All non-sibling applicants, tiebreakers included: ${pct(nonSib)} main round, ${pct(combine(nonSib, wl.odds))} combined.</p>`;
+  const ns = nonSibling(r);
+  const strictLine = d(15) == null ? '' :
+    `<p class="fine">The sheet's stricter group with no tiebreaker of any kind (${num(r[14])} requests): ${pct(d(15))} main round, ${pct(combine(d(15), wl.odds))} combined.</p>`;
   const [wlValue, wlNote] = waitlistText(r, wl);
 
   const hoodCard = cw
@@ -360,15 +365,15 @@ function renderResult() {
     <p class="picked">${schoolLabel(r[0])} <span>· ${esc(r[3])} · ${gradeName(r[1])}</span></p>
     ${badges(r[0], r[4])}
     <div class="odds">
-      ${oddsCard('No tiebreakers', `${num(r[14])} requests came with no tiebreaker.`, d(15), wl,
-        'No data', 'Nobody applied here without a tiebreaker.', nonSibLine)}
+      ${oddsCard('No sibling tiebreaker', `${num(ns.suc)} of ${num(ns.req)} non-sibling requests got this or a higher-ranked choice.`, ns.pSuc, wl,
+        'No data', 'Every request here came with a sibling tiebreaker.', strictLine)}
       ${hoodCard}
     </div>
     <section class="ledger">
       <h2>Raw numbers</h2>
       <dl>
-        <div class="row"><dt>Assigned in the main round<small>${num(r[6])} of ${num(r[5])} requests, all applicants</small></dt><dd>${pct(d(7))}</dd></div>
-        <div class="row"><dt>Success in the main round<small>${num(r[8])} of ${num(r[5])} got this or a higher-ranked choice</small></dt><dd>${pct(d(9))}</dd></div>
+        <div class="row"><dt>Assigned in the main round<small>${num(ns.asg)} of ${num(ns.req)} non-sibling requests</small></dt><dd>${pct(ns.pAsg)}</dd></div>
+        <div class="row"><dt>Success in the main round<small>${num(ns.suc)} of ${num(ns.req)} non-sibling requests got this or a higher-ranked choice</small></dt><dd>${pct(ns.pSuc)}</dd></div>
         <div class="row"><dt>Odds of getting off the waitlist<small>${wlNote}</small></dt><dd>${wlValue}</dd></div>
       </dl>
       <div class="trio">
@@ -549,16 +554,16 @@ function renderPanel() {
   const rows = progs.filter((p) => p.grades.has(state.grade)).map((p) => {
     const r = p.grades.get(state.grade);
     const d = (i) => (r[i] == null ? null : r[i] / 100);
-    const wl = waitlist(r), cw = cityWide(r);
+    const wl = waitlist(r), cw = cityWide(r), ns = nonSibling(r);
     const [wlValue] = waitlistText(r, wl);
     const hood = cw ? '<td class="dim">City-wide</td>'
       : `<td class="key">${pct(combine(d(13), wl.odds))}<span class="sub">${d(13) == null ? 'no applicants' : pct(d(13)) + ' main round'}</span></td>`;
     return `<tr>
       <td><button type="button" class="linkbtn" data-key="${esc(p.key)}">${esc(p.program)}</button>${r[4] ? `<span class="sub">${esc(r[4])}</span>` : ''}</td>
-      <td class="key">${pct(combine(d(15), wl.odds))}<span class="sub">${d(15) == null ? 'no applicants' : pct(d(15)) + ' main round'}</span></td>
+      <td class="key">${pct(combine(ns.pSuc, wl.odds))}<span class="sub">${ns.pSuc == null ? 'no applicants' : pct(ns.pSuc) + ' main round'}</span></td>
       ${hood}
-      <td>${pct(d(7))}<span class="sub">${num(r[6])} of ${num(r[5])}</span></td>
-      <td>${pct(d(9))}<span class="sub">${num(r[8])} of ${num(r[5])}</span></td>
+      <td>${pct(ns.pAsg)}<span class="sub">${num(ns.asg)} of ${num(ns.req)}</span></td>
+      <td>${pct(ns.pSuc)}<span class="sub">${num(ns.suc)} of ${num(ns.req)}</span></td>
       <td>${wlValue}${wl.raw > 1 ? '<span class="sub">capped</span>' : !wl.has ? '<span class="sub">no waitlist</span>' : ''}</td>
       <td>${num(r[16])}</td><td>${num(r[17])}</td><td>${num(r[18])}</td>
     </tr>`;
@@ -576,7 +581,7 @@ function renderPanel() {
       <div class="tablebox"><table>
         <thead><tr>
           <th scope="col">Program, ${gradeName(state.grade)}</th>
-          <th scope="col">Odds, no tiebreakers</th>
+          <th scope="col">Odds, no sibling tiebreaker</th>
           <th scope="col">Odds, neighborhood tiebreaker</th>
           <th scope="col">Assigned in main round</th>
           <th scope="col">Success in main round</th>
