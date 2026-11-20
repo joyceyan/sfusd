@@ -135,6 +135,7 @@ open('index.html', 'w').write(
     '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
     '<meta name="description" content="Main-round and waitlist odds for every SFUSD school, program and grade, with a map of SFUSD and charter schools.">\n'
+    '<link rel="icon" type="image/png" href="favicon.png">\n<link rel="apple-touch-icon" href="apple-touch-icon.png">\n'
     '<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>\n'
     + head + '\n</head>\n<body>\n<div class="wrap" id="page">' + body + '</body>\n</html>\n')
 print('page bytes', len(t), 'geo bytes', len(J(GEO)))
