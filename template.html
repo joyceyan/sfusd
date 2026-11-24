@@ -306,7 +306,7 @@ const PTS = {};
 for (const [n, s] of Object.entries(SCH)) PTS[n] = { x: s[0], y: s[1], r: s[2], cls: s[4] ? 'aa' : 'cw', lvl: s[5] };
 for (const [n, c] of Object.entries(CH)) PTS[n] = { x: c.x, y: c.y, r: c.r, cls: 'ch', lvl: c.lvl };
 
-const state = { key: 'Alvarado ES|GE', grade: 'K', level: 'all', charter: null, cgrade: 'K', cscope: 'all', cmin: { gs: 0, odds: 0, hood: 0, wl: 0 }, csort: { col: 'gs', dir: -1 } };
+const state = { key: 'Alvarado ES|GE', grade: 'K', level: 'all', charter: null, mapOff: null, cgrade: 'K', cscope: 'all', cmin: { gs: 0, odds: 0, hood: 0, wl: 0 }, csort: { col: 'gs', dir: -1 } };
 try {
   const s = JSON.parse(localStorage.getItem('sfusd-odds') || 'null');
   if (s && combos.has(s.key)) Object.assign(state, s);
@@ -513,6 +513,10 @@ let view = { x: 0, y: 0, w: WORLD.w, h: WORLD.h };
 let mapBuilt = false;
 
 function selectedSchool() { return state.charter || combos.get(state.key).school; }
+// The map shares its pick with Lookup. When the level or minimum filters hide the picked school, the map drops it:
+// state.mapOff records that name, so picking anything else (here, in Lookup or in All schools) brings the panel back.
+const mapPick = () => (state.mapOff === selectedSchool() ? null : selectedSchool());
+const mapShows = (n) => (state.level === 'all' || PTS[n].lvl === state.level) && schoolMeetsMins(n);
 
 function buildMap() {
   $('hoods').innerHTML = GEO.map((g) => `<path class="hood" d="${g[1]}"></path>`).join('');
@@ -555,11 +559,12 @@ function zoomAt(factor, cx, cy) {
   applyView();
 }
 function renderMapState() {
-  const sel = selectedSchool();
+  if (mapPick() && !mapShows(mapPick())) { state.mapOff = mapPick(); renderPanel(); }
+  const sel = mapPick();
   let visible = 0;
   for (const g of $('dots').children) {
     const n = schoolNames[+g.dataset.i];
-    const show = ((state.level === 'all' || PTS[n].lvl === state.level) && schoolMeetsMins(n)) || n === sel;
+    const show = mapShows(n);
     if (show) visible++;
     if (show) g.removeAttribute('hidden'); else g.setAttribute('hidden', '');
     g.classList.toggle('sel', n === sel);
@@ -606,6 +611,7 @@ function charterPanel(name) {
   </div>`;
 }
 function renderPanel() {
+  if (!mapPick()) { $('map-panel').innerHTML = '<p class="fine">Select a school on the map to see its programs and odds.</p>'; return; }
   if (state.charter) { $('map-panel').innerHTML = charterPanel(state.charter); return; }
   const name = selectedSchool();
   const progs = bySchool.get(name);
@@ -661,6 +667,7 @@ function renderPanel() {
     </div>`;
 }
 function selectSchool(name) {
+  state.mapOff = null;
   if (CH[name]) state.charter = name;
   else {
     if (state.charter || name !== selectedSchool()) {
@@ -671,7 +678,7 @@ function selectSchool(name) {
   }
   refreshMap();
 }
-function refreshMap() { renderPanel(); renderMapState(); remember(); }
+function refreshMap() { renderMapState(); renderPanel(); remember(); }
 
 $('map-panel').addEventListener('click', (e) => {
   const g = e.target.closest('[data-grade]');
@@ -868,7 +875,11 @@ $('city-table').addEventListener('click', (e) => {
   const k = e.target.closest('[data-key]');
   if (k) { state.key = k.dataset.key; state.charter = null; state.grade = state.cgrade; showView('lookup'); return; }
   const c = e.target.closest('[data-charter]');
-  if (c) { state.charter = c.dataset.charter; showView('map'); }
+  if (c) {
+    state.charter = c.dataset.charter; state.mapOff = null;
+    if (state.level !== 'all' && PTS[state.charter].lvl !== state.level) state.level = 'all';   // keep the school just opened on the map
+    showView('map');
+  }
 });
 
 // ---------- Views ----------
